@@ -60,18 +60,19 @@ boolean Plugin_244(byte function, struct EventStruct *event, String& string)
         Device[++deviceCount].Number = PLUGIN_ID_244;
         Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
         Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
-        Device[deviceCount].Custom = true;
         Device[deviceCount].FormulaOption = true;
         Device[deviceCount].ValueCount = 3;
         Device[deviceCount].SendDataOption = true;
         Device[deviceCount].TimerOption = true;
         Device[deviceCount].GlobalSyncOption = false;
+        success = true;
         break;
       }
 
     case PLUGIN_GET_DEVICENAME:
       {
         string = F(PLUGIN_NAME_244);
+        success = true;
         break;
       }
 
@@ -82,6 +83,7 @@ boolean Plugin_244(byte function, struct EventStruct *event, String& string)
                PSTR(PLUGIN_VALUENAME2_244));
       strcpy_P(ExtraTaskSettings.TaskDeviceValueNames[2],
                PSTR(PLUGIN_VALUENAME3_244));
+      success = true;
       break;
     }
 
@@ -206,9 +208,7 @@ boolean Plugin_244(byte function, struct EventStruct *event, String& string)
               //addLog(LOG_LEVEL_ERROR, F("S244: Stage publishMessage"));
               publishMessage(); // do something with the result
 
-              UserVar[event->BaseVarIndex] = currentconsumptionT1;
-              UserVar[event->BaseVarIndex + 1] = currentconsumptionT2;
-              UserVar[event->BaseVarIndex + 2] = currentpower;
+
 
               break;
           }
@@ -216,6 +216,16 @@ boolean Plugin_244(byte function, struct EventStruct *event, String& string)
           success = true;
           break;
         }
+
+        case PLUGIN_READ:
+        {
+          UserVar[event->BaseVarIndex] = currentconsumptionT1;
+          UserVar[event->BaseVarIndex + 1] = currentconsumptionT2;
+          UserVar[event->BaseVarIndex + 2] = currentpower;
+          success = true;
+          break;
+        }
+
     }
   return success;
 }
