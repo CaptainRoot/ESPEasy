@@ -1,11 +1,11 @@
 #ifdef USES_P244
 //#######################################################################################################
-//#################################### Plugin 244: ???? ##############################################
+//#################################### Plugin 244: Energy - EasyMeter Q3B SML D0 ##############################################
 //#######################################################################################################
 
 #define PLUGIN_244
 #define PLUGIN_ID_244         244
-#define PLUGIN_NAME_244       "Energy-SML"
+#define PLUGIN_NAME_244       "Energy - EasyMeter Q3B SML D0"
 
 #define PLUGIN_VALUENAME1_244 "T1"
 #define PLUGIN_VALUENAME2_244 "T2"
@@ -29,24 +29,22 @@ const byte consumptionSequence[] = { 0x07, 0x01, 0x00, 0x01, 0x08, 0x00, 0xFF, 0
 const byte consumptionSequenceT1[] = { 0x07, 0x01, 0x00, 0x01, 0x08, 0x01, 0xFF, 0x01, 0x01, 0x62, 0x1E, 0x52, 0x01, 0x65}; //sequence predeecing the current "Gesamtverbrauch" value (8 Bytes)
 const byte consumptionSequenceT2[] = { 0x07, 0x01, 0x00, 0x01, 0x08, 0x02, 0xFF, 0x01, 0x01, 0x62, 0x1E, 0x52, 0x01, 0x65}; //sequence predeecing the current "Gesamtverbrauch" value (8 Bytes)
 //                                     07     01   00    01    08    00    ff
+
 int smlIndex; //index counter within smlMessage array
 int startIndex; //start index for start sequence search
 int stopIndex; //start index for stop sequence search
 int stage; //index to maneuver through cases
 
-int currentpower; //variable to hold translated "Wirkleistung" value
-int currentpowerA; //variable to hold translated "Wirkleistung" value
-int currentpowerB; //variable to hold translated "Wirkleistung" value
-int currentpowerC; //variable to hold translated "Wirkleistung" value
 
-unsigned long currentconsumption; //variable to hold translated "Gesamtverbrauch" value
-double currentconsumptionkWh; //variable to calulate actual "Gesamtverbrauch" in kWh
+float currentpowerTotalInWatt;
 
-unsigned int currentconsumptionT1; //variable to hold translated "Gesamtverbrauch" value
-float currentconsumptionkWhT1; //variable to calulate actual "Gesamtverbrauch" in kWh
+//int currentpowerA; //variable to hold translated "Power" value
+//int currentpowerB; //variable to hold translated "Power" value
+//int currentpowerC; //variable to hold translated "Power" value
 
-unsigned int currentconsumptionT2; //variable to hold translated "Gesamtverbrauch" value
-float currentconsumptionkWhT2; //variable to calulate actual "Gesamtverbrauch" in kWh
+double currentconsumptionkWh; //variable to calulate actual "Total Energy" in kWh
+float  currentconsumptionkWhT1; //variable to calulate actual "Total Energy T1" in kWh
+float  currentconsumptionkWhT2; //variable to calulate actual "Total Energy T2" in kWh
 
 boolean Plugin_244(byte function, struct EventStruct *event, String& string)
 {
@@ -58,7 +56,6 @@ boolean Plugin_244(byte function, struct EventStruct *event, String& string)
     case PLUGIN_DEVICE_ADD:
       {
         Device[++deviceCount].Number = PLUGIN_ID_244;
-        Device[deviceCount].Type = DEVICE_TYPE_SINGLE;
         Device[deviceCount].VType = SENSOR_TYPE_TRIPLE;
         Device[deviceCount].FormulaOption = true;
         Device[deviceCount].ValueCount = 3;
@@ -181,15 +178,15 @@ boolean Plugin_244(byte function, struct EventStruct *event, String& string)
 
             case 3:
               addLog(LOG_LEVEL_ERROR, F("S244: Stage findpowerSequenceA"));
-              findpowerSequenceA(); //look for power sequence and extract
+              //findpowerSequenceA(); //look for power sequence and extract
               break;
             case 4:
               addLog(LOG_LEVEL_ERROR, F("S244: Stage findpowerSequenceB"));
-              findpowerSequenceB(); //look for power sequence and extract
+              //findpowerSequenceB(); //look for power sequence and extract
               break;
             case 5:
               addLog(LOG_LEVEL_ERROR, F("S244: Stage findpowerSequenceC"));
-              findpowerSequenceC(); //look for power sequence and extract
+              //findpowerSequenceC(); //look for power sequence and extract
               break;
 
             case 6:
@@ -219,9 +216,9 @@ boolean Plugin_244(byte function, struct EventStruct *event, String& string)
 
         case PLUGIN_READ:
         {
-          UserVar[event->BaseVarIndex] = currentconsumptionT1;
-          UserVar[event->BaseVarIndex + 1] = currentconsumptionT2;
-          UserVar[event->BaseVarIndex + 2] = currentpower;
+          UserVar[event->BaseVarIndex] = currentconsumptionkWhT1;
+          UserVar[event->BaseVarIndex + 1] = currentconsumptionkWhT2;
+          UserVar[event->BaseVarIndex + 2] = currentpowerTotalInWatt;
           success = true;
           break;
         }
@@ -283,8 +280,9 @@ void findpowerSequenceTotal() {
   byte temp; //temp variable to store loop search data
   startIndex = 0; //start at position 0 of exctracted SML message
   byte power[4]; //array that holds the extracted 4 byte "Wirkleistung" value
+  int currentpower; //variable to hold translated "Power" value
 
-  for(int x = 0; x < sizeof(smlMessage); x++){ //for as long there are element in the exctracted SML message
+  for(unsigned int x = 0; x < sizeof(smlMessage); x++){ //for as long there are element in the exctracted SML message
 
     temp = smlMessage[x]; //set temp variable to 0,1,2 element in extracted SML message
 
@@ -294,7 +292,7 @@ void findpowerSequenceTotal() {
 
       if (startIndex == sizeof(powerSequenceTotal)) //in complete sequence is found
       {
-        for(int y = 0; y< 4; y++)
+        for(unsigned int y = 0; y< 4; y++)
         { //read the next 4 bytes (the actual power value)
           power[y] = smlMessage[x+y+1]; //store into power array
         }
@@ -307,9 +305,12 @@ void findpowerSequenceTotal() {
       startIndex = 0;
     }
   }
-   currentpower = (power[0] << 24 | power[1] << 16 | power[2] << 8 | power[3]); //merge 4 bytes into single variable to calculate power value
+
+  currentpower = ((power[0] << 24) | (power[1] << 16) | (power[2] << 8) | power[3]); //merge 4 bytes into single variable to calculate power value
+  currentpowerTotalInWatt = (float)currentpower / 100.0;
 }
 
+/*
 void findpowerSequenceA() {
   byte temp; //temp variable to store loop search data
   startIndex = 0; //start at position 0 of exctracted SML message
@@ -338,7 +339,7 @@ void findpowerSequenceA() {
       startIndex = 0;
     }
   }
-   currentpowerA = (power[0] << 24 | power[1] << 16 | power[2] << 8 | power[3]); //merge 4 bytes into single variable to calculate power value
+   currentpowerA = ((power[0] << 24) | (power[1] << 16) | (power[2] << 8) | power[3]); //merge 4 bytes into single variable to calculate power value
 }
 
 void findpowerSequenceB() {
@@ -369,7 +370,7 @@ void findpowerSequenceB() {
       startIndex = 0;
     }
   }
-   currentpowerB = (power[0] << 24 | power[1] << 16 | power[2] << 8 | power[3]); //merge 4 bytes into single variable to calculate power value
+   currentpowerB = ((power[0] << 24) | (power[1] << 16) | (power[2] << 8) | power[3]); //merge 4 bytes into single variable to calculate power value
 }
 
 void findpowerSequenceC() {
@@ -400,23 +401,25 @@ void findpowerSequenceC() {
       startIndex = 0;
     }
   }
-   currentpowerC = (power[0] << 24 | power[1] << 16 | power[2] << 8 | power[3]); //merge 4 bytes into single variable to calculate power value
+   currentpowerC = ((power[0] << 24) | (power[1] << 16) | (power[2] << 8) | power[3]); //merge 4 bytes into single variable to calculate power value
 }
+*/
 
 void findConsumptionSequence() {
   byte temp;
   byte consumption[8]; //array that holds the extracted 8 byte "Gesamtverbrauch" value
+  unsigned long currentconsumption; //variable to hold translated "Total Energy" value
 
   startIndex = 0;
 
-  for(int x = 0; x < sizeof(smlMessage); x++){
+  for(unsigned int x = 0; x < sizeof(smlMessage); x++){
     temp = smlMessage[x];
     if (temp == consumptionSequence[startIndex])
     {
       startIndex++;
       if (startIndex == sizeof(consumptionSequence))
       {
-        for(int y = 0; y< 8; y++){
+        for(unsigned int y = 0; y< 8; y++){
           //hier muss für die folgenden 8 Bytes hoch gezählt werden
           consumption[y] = smlMessage[x+y+1];
         }
@@ -429,24 +432,25 @@ void findConsumptionSequence() {
     }
   }
 
-   currentconsumption = (consumption[0] << 56 | consumption[1] << 48 | consumption[2] << 40 | consumption[3] << 32| consumption[4] << 24 | consumption[5] << 16 | consumption[6] << 8 | consumption[7]); //combine and turn 8 bytes into one variable
-   currentconsumptionkWh = currentconsumption/1000;
+   currentconsumption = ((consumption[0] << 56) | (consumption[1] << 48) | (consumption[2] << 40) | (consumption[3] << 32) | (consumption[4] << 24) | (consumption[5] << 16) | (consumption[6] << 8) | consumption[7]); //combine and turn 8 bytes into one variable
+   currentconsumptionkWh = (double)currentconsumption / 1000.0;
 }
 
 void findConsumptionSequenceT1() {
   byte temp;
   byte consumption[8]; //array that holds the extracted 8 byte "Gesamtverbrauch" value
+  unsigned int currentconsumptionT1; //variable to hold translated "Total Energy T1" value
 
   startIndex = 0;
 
-  for(int x = 0; x < sizeof(smlMessage); x++){
+  for(unsigned int x = 0; x < sizeof(smlMessage); x++){
     temp = smlMessage[x];
     if (temp == consumptionSequenceT1[startIndex])
     {
       startIndex++;
       if (startIndex == sizeof(consumptionSequenceT1))
       {
-        for(int y = 0; y< 4; y++){
+        for(unsigned int y = 0; y< 4; y++){
           //hier muss für die folgenden 8 Bytes hoch gezählt werden
           consumption[y] = smlMessage[x+y+1];
         }
@@ -459,25 +463,26 @@ void findConsumptionSequenceT1() {
     }
   }
 
-   currentconsumptionT1 = (consumption[0] << 24 | consumption[1] << 16 | consumption[2] << 8 | consumption[3]) * 10; //combine and turn 4 bytes into one variable
-   currentconsumptionkWhT1 = currentconsumptionT1/1000;
+   currentconsumptionT1 = ((consumption[0] << 24) | (consumption[1] << 16) | (consumption[2] << 8) | consumption[3]) * 10; //combine and turn 4 bytes into one variable
+   currentconsumptionkWhT1 = (float)currentconsumptionT1 / 1000.0;
 }
 
 
 void findConsumptionSequenceT2() {
   byte temp;
   byte consumption[8]; //array that holds the extracted 8 byte "Gesamtverbrauch" value
+  unsigned int currentconsumptionT2; //variable to hold translated "Total Energy T2" value
 
   startIndex = 0;
 
-  for(int x = 0; x < sizeof(smlMessage); x++){
+  for(unsigned int x = 0; x < sizeof(smlMessage); x++){
     temp = smlMessage[x];
     if (temp == consumptionSequenceT2[startIndex])
     {
       startIndex++;
       if (startIndex == sizeof(consumptionSequenceT2))
       {
-        for(int y = 0; y< 4; y++){
+        for(unsigned int y = 0; y< 4; y++){
           //hier muss für die folgenden 8 Bytes hoch gezählt werden
           consumption[y] = smlMessage[x+y+1];
         }
@@ -490,28 +495,28 @@ void findConsumptionSequenceT2() {
     }
   }
 
-   currentconsumptionT2 = (consumption[0] << 24 | consumption[1] << 16 | consumption[2] << 8 | consumption[3]) * 10; //combine and turn 4 bytes into one variable
-   currentconsumptionkWhT2 = currentconsumptionT2/1000;
+   currentconsumptionT2 = ((consumption[0] << 24) | (consumption[1] << 16) | (consumption[2] << 8) | consumption[3]) * 10; //combine and turn 4 bytes into one variable
+   currentconsumptionkWhT2 = (float) currentconsumptionT2 / 1000.0;
 }
 
 void publishMessage() {
   String log = F("P244:  SML: ");
     log += "Power Total: ";
-    log +=currentpower;
+    log +=currentpowerTotalInWatt;
     //log += " Power A: ";
     //log +=currentpowerA;
     //log += " Power B: ";
     //log +=currentpowerB;
     //log += " Power C: ";
     //log +=currentpowerC;
-    log += "Energy Total : ";
-    log += currentconsumption;
+    log += " Energy Total : ";
+    log += currentconsumptionkWh;
 
     log += " T1: ";
-    log += currentconsumptionT1;
+    log += currentconsumptionkWhT1;
 
     log += " T2: ";
-    log += currentconsumptionT2;
+    log += currentconsumptionkWhT2;
     addLog(LOG_LEVEL_INFO, log);
     stage = 0;
 }
